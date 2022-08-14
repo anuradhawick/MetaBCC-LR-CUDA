@@ -1,0 +1,106 @@
+#!/usr/bin/env python
+import logging
+import os
+import sys
+import time
+
+try:
+    import cudf
+    import cupy as cp
+
+    CUDA = True
+except:
+    import numpy as cp
+    import pandas as cudf
+
+    CUDA = False
+
+import click
+
+from mbcclr_utils import binner_core, runners_utils, sample_data
+
+
+@click.command()
+@click.option(
+    "--composition",
+    required=True,
+    type=click.Path(dir_okay=False, file_okay=True),
+    help="Reads path for binning.",
+)
+@click.option(
+    "--coverage",
+    required=True,
+    type=click.Path(dir_okay=False, file_okay=True),
+    help="Reads path for binning.",
+)
+@click.option(
+    "--embedding",
+    required=False,
+    type=click.Choice(["tsne", "umap"], case_sensitive=False),
+    help="Embedding technique for clustering.",
+)
+@click.option("--output", help="Output directory", type=str, required=True)
+@click.version_option(version="3.0.0", prog_name="MetaBCC-LR")
+def main(coverage, composition, embedding, output):
+    """
+    MetaBCC-LR Help. A tool developed for binning of metagenomics long reads (PacBio/ONT).
+    Tool utilizes composition and coverage profiles of reads based on k-mer frequencies to perform dimension reduction.
+    dimension reduced reads are then clustered using DB-SCAN.
+    """
+
+    logger = logging.getLogger("MetaBCC-LR")
+    logger.setLevel(logging.DEBUG)
+
+    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    consoleHeader = logging.StreamHandler()
+    consoleHeader.setFormatter(formatter)
+    consoleHeader.setLevel(logging.INFO)
+    logger.addHandler(consoleHeader)
+
+    start_time = time.time()
+
+    if not os.path.exists(output):
+        os.makedirs(output)
+    if not os.path.exists(f"{output}/images"):
+        os.makedirs(f"{output}/images")
+    if not os.path.exists(f"{output}/misc"):
+        os.makedirs(f"{output}/misc")
+    if not os.path.exists(f"{output}/features"):
+        os.makedirs(f"{output}/features")
+
+    fileHandler = logging.FileHandler(f"{output}/metabcc-lr.log")
+    fileHandler.setLevel(logging.DEBUG)
+    fileHandler.setFormatter(formatter)
+    logger.addHandler(fileHandler)
+
+    # running program
+    start_time = time.time()
+
+    if CUDA:
+        logger.info("Running on CUDA!")
+    else:
+        logger.info("CUDA not detected. Using Sci-Kit Learn!")
+
+    logger.info("Reading features")
+    composition = cudf.read_csv(composition, header=None).to_cupy()
+    coverage = cudf.read_csv(coverage, header=None).to_cupy()
+
+    logger.info("Binning sampled reads")
+    binner_core.run_binner(composition, coverage, embedding)
+    logger.info("Binning sampled reads complete")
+
+    # logger.info("Predict read bins")
+    # runners_utils.run_assign(output, threads)
+    # logger.info("Predict read bins complete")
+
+    # end_time = time.time()
+    # time_taken = end_time - start_time
+    # logger.info(f"Program Finished!. Please find the output in {output}/final.txt")
+    # logger.info(f"Total time consumed = {time_taken:10.2f} seconds")
+
+    # logger.removeHandler(fileHandler)
+    # logger.removeHandler(consoleHeader)
+
+
+if __name__ == "__main__":
+    main()
